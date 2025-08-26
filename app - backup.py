@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, firestore
-import time
 
 # --- Bước 2: Tải và cấu hình các biến môi trường ---
 
@@ -15,14 +14,8 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 FIREBASE_CREDENTIALS_JSON = os.getenv('FIREBASE_CREDENTIALS_JSON')
-
-# --- THAY ĐỔI #1: Lấy các biến cần thiết cho việc làm mới token ---
-ZALO_APP_ID = os.getenv('ZALO_APP_ID')
-ZALO_SECRET_KEY = os.getenv('ZALO_SECRET_KEY')
-ZALO_REFRESH_TOKEN = os.getenv('ZALO_REFRESH_TOKEN') # Refresh token dài hạn (3 tháng)
-
-# Đường dẫn đến file lưu trữ access token tạm thời
-TOKEN_FILE_PATH = os.path.join(os.path.dirname(__file__), 'zalo_token.json')
+ZALO_OA_TOKENS_JSON = os.getenv('ZALO_OA_TOKENS_JSON')
+ZALO_TOKEN_MAP = json.loads(ZALO_OA_TOKENS_JSON) if ZALO_OA_TOKENS_JSON else {}
 
 
 # Cấu hình Gemini AI
@@ -90,7 +83,7 @@ Bạn phải tuân thủ nghiêm ngặt quy trình từng bước sau, với pho
 # CÁC QUY TẮC XỬ LÝ ĐẶC BIỆT
 - **Bám sát kiến thức:** Chỉ được phép sử dụng thông tin trong phần "KIẾN THỨC CUNG CẤP" dưới đây. Tuyệt đối không tự bịa ra thông tin hoặc dùng kiến thức bên ngoài.
 - **Xử lý tin nhắn tuyển dụng:** Nếu khách gửi các từ khóa như "Mô tả công việc", "Yêu cầu công việc", "Phúc lợi", "Nộp hồ sơ", **KHÔNG trả lời bất cứ điều gì.**
-- **Thông tin người tạo:** Nếu được hỏi, người sinh ra hoặc tạo ra bạn là Daddy "Tony An Lạc".
+- **Thông tin người tạo:** Nếu được hỏi, người tạo ra bạn là anh "Tony An Lạc".
 
 # KIẾN THỨC CUNG CẤP
 ---
@@ -118,56 +111,13 @@ def initialize_firestore():
 
 # --- Bước 4: Các hàm chức năng chính của Bot ---
 
-# --- THAY ĐỔI #2: Hàm quản lý và làm mới Access Token ---
-def get_access_token():
-    """
-    Hàm này đọc access token từ file. Nếu token không tồn tại, hết hạn,
-    hoặc sắp hết hạn, nó sẽ tự động gọi Zalo để lấy token mới.
-    """
-    # 1. Đọc token từ file (nếu có)
-    try:
-        with open(TOKEN_FILE_PATH, 'r') as f:
-            token_data = json.load(f)
-        # Kiểm tra xem token có sắp hết hạn không (còn dưới 1 giờ)
-        if token_data.get('expires_at', 0) > time.time() + 3600:
-            return token_data['access_token']
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass # File không tồn tại hoặc lỗi, sẽ lấy token mới
-
-    # 2. Nếu token không hợp lệ, lấy token mới bằng Refresh Token
-    print("Access token đã hết hạn hoặc không hợp lệ, đang lấy token mới...")
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    data = {
-        'app_id': ZALO_APP_ID,
-        'refresh_token': ZALO_REFRESH_TOKEN,
-        'grant_type': 'refresh_token'
-    }
-    try:
-        response = requests.post('https://oauth.zalo.me/v4/oa/access_token', headers=headers, data=data,
-                                 auth=(ZALO_APP_ID, ZALO_SECRET_KEY)) # Basic Authentication
-        response.raise_for_status()
-        new_token_data = response.json()
-
-        # Tính toán thời gian hết hạn và lưu lại
-        new_token_data['expires_at'] = time.time() + new_token_data['expires_in']
-        with open(TOKEN_FILE_PATH, 'w') as f:
-            json.dump(new_token_data, f)
-        
-        print("✅ Đã lấy và lưu access token mới thành công!")
-        return new_token_data['access_token']
-    except requests.exceptions.RequestException as e:
-        print(f"❌ LỖI NGHIÊM TRỌNG: Không thể làm mới access token. Lỗi: {e}")
-        if 'response' in locals():
-            print(f"Phản hồi từ Zalo OAuth: {response.text}")
-        return None
-
 def get_gemini_response(sender_id, user_message):
     initialize_firestore()
     if not db or not GEMINI_API_KEY:
         return "Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng thử lại sau."
     try:
         model = genai.GenerativeModel(
-            'gemini-2.5-flash',
+            'gemini-2.0-flash',
             system_instruction=SYSTEM_INSTRUCTION
         )
         
@@ -198,11 +148,9 @@ def get_gemini_response(sender_id, user_message):
         print(f"❌ Lỗi khi gọi Gemini hoặc tương tác với Firestore: {e}")
         return "Rất xin lỗi, tôi đang gặp một chút trục trặc kỹ thuật. Bạn vui lòng chờ trong giây lát."
 
-# --- THAY ĐỔI #3: Sửa hàm send_zalo_message để tự động lấy token ---
-def send_zalo_message(recipient_id, message_text):
-    access_token = get_access_token()
+def send_zalo_message(recipient_id, message_text, access_token):
     if not access_token:
-        print("❌ Không thể gửi tin nhắn vì không có access token hợp lệ.")
+        print("❌ Lỗi: Không tìm thấy Access Token cho OA này.")
         return
 
     headers = { 'Content-Type': 'application/json', 'access_token': access_token }
@@ -216,7 +164,6 @@ def send_zalo_message(recipient_id, message_text):
         if 'response' in locals(): print(f"Phản hồi từ Zalo API: {response.text}")
 
 # --- Bước 5: Khởi tạo ứng dụng web và định nghĩa Webhook ---
-# --- Chỉ còn 1 OA nên không cần map token nữa ---
 app = Flask(__name__)
 
 @app.route('/zalo-webhook', methods=['GET', 'POST'])
@@ -231,12 +178,19 @@ def zalo_webhook():
         
         if data and data.get("event_name") == "user_send_text":
             try:
+                oa_id = data.get("recipient", {}).get("id")
+                page_access_token = ZALO_TOKEN_MAP.get(oa_id)
+
+                if not page_access_token:
+                    print(f"❌ Cảnh báo: Không tìm thấy Access Token cho OA ID: {oa_id}")
+                    return "ok", 200
+
                 sender_id = data["sender"]["id"]
                 message_text = data["message"]["text"]
                 
                 gemini_answer = get_gemini_response(sender_id, message_text)
                 
-                send_zalo_message(sender_id, gemini_answer)
+                send_zalo_message(sender_id, gemini_answer, page_access_token)
 
             except Exception as e:
                 print(f"❌ LỖI NGHIÊM TRỌNG TRONG ZALO WEBHOOK: {e}")
