@@ -15,8 +15,7 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 FIREBASE_CREDENTIALS_JSON = os.getenv('FIREBASE_CREDENTIALS_JSON')
-
-# --- THAY ĐỔI #1: Lấy các biến cần thiết cho việc làm mới token ---
+# --- Lấy các biến cần thiết cho việc làm mới token ---
 ZALO_APP_ID = os.getenv('ZALO_APP_ID')
 ZALO_SECRET_KEY = os.getenv('ZALO_SECRET_KEY')
 ZALO_REFRESH_TOKEN = os.getenv('ZALO_REFRESH_TOKEN') # Refresh token dài hạn (3 tháng)
@@ -24,8 +23,6 @@ ZALO_REFRESH_TOKEN = os.getenv('ZALO_REFRESH_TOKEN') # Refresh token dài hạn 
 # Đường dẫn đến file lưu trữ access token tạm thời
 TOKEN_FILE_PATH = os.path.join(os.path.dirname(__file__), 'zalo_token.json')
 
-
-# Cấu hình Gemini AI
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
@@ -118,23 +115,16 @@ def initialize_firestore():
 
 # --- Bước 4: Các hàm chức năng chính của Bot ---
 
-# --- THAY ĐỔI #2: Hàm quản lý và làm mới Access Token ---
+# --- Hàm quản lý và làm mới Access Token ---
 def get_access_token():
-    """
-    Hàm này đọc access token từ file. Nếu token không tồn tại, hết hạn,
-    hoặc sắp hết hạn, nó sẽ tự động gọi Zalo để lấy token mới.
-    """
-    # 1. Đọc token từ file (nếu có)
     try:
         with open(TOKEN_FILE_PATH, 'r') as f:
             token_data = json.load(f)
-        # Kiểm tra xem token có sắp hết hạn không (còn dưới 1 giờ)
         if token_data.get('expires_at', 0) > time.time() + 3600:
             return token_data['access_token']
     except (FileNotFoundError, json.JSONDecodeError):
-        pass # File không tồn tại hoặc lỗi, sẽ lấy token mới
+        pass
 
-    # 2. Nếu token không hợp lệ, lấy token mới bằng Refresh Token
     print("Access token đã hết hạn hoặc không hợp lệ, đang lấy token mới...")
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     data = {
@@ -144,11 +134,15 @@ def get_access_token():
     }
     try:
         response = requests.post('https://oauth.zalo.me/v4/oa/access_token', headers=headers, data=data,
-                                 auth=(ZALO_APP_ID, ZALO_SECRET_KEY)) # Basic Authentication
+                                 auth=(ZALO_APP_ID, ZALO_SECRET_KEY))
         response.raise_for_status()
         new_token_data = response.json()
 
-        # Tính toán thời gian hết hạn và lưu lại
+        # --- THAY ĐỔI #1: Kiểm tra xem Zalo có trả về lỗi không ---
+        if 'error_name' in new_token_data:
+            print(f"❌ Zalo trả về lỗi khi làm mới token: {new_token_data}")
+            return None
+
         new_token_data['expires_at'] = time.time() + new_token_data['expires_in']
         with open(TOKEN_FILE_PATH, 'w') as f:
             json.dump(new_token_data, f)
@@ -156,9 +150,14 @@ def get_access_token():
         print("✅ Đã lấy và lưu access token mới thành công!")
         return new_token_data['access_token']
     except requests.exceptions.RequestException as e:
-        print(f"❌ LỖI NGHIÊM TRỌNG: Không thể làm mới access token. Lỗi: {e}")
+        print(f"❌ LỖI NGHIÊM TRỌNG: Không thể làm mới access token. Lỗi HTTP: {e}")
         if 'response' in locals():
             print(f"Phản hồi từ Zalo OAuth: {response.text}")
+        return None
+    except KeyError as e:
+        # --- THAY ĐỔI #2: Ghi log chi tiết hơn khi gặp lỗi KeyError ---
+        print(f"❌ Lỗi KeyError khi xử lý phản hồi từ Zalo: Thiếu khóa {e}")
+        print(f"Phản hồi nhận được từ Zalo: {new_token_data}")
         return None
 
 def get_gemini_response(sender_id, user_message):
