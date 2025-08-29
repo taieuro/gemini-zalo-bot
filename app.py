@@ -8,6 +8,8 @@ import google.generativeai as genai
 import firebase_admin
 from firebase_admin import credentials, firestore
 import time
+from PIL import Image # Thư viện để xử lý hình ảnh
+import io # Thư viện để làm việc với dữ liệu bytes
 
 # --- Bước 2: Tải và cấu hình các biến môi trường ---
 
@@ -65,26 +67,27 @@ Bạn phải tuân thủ nghiêm ngặt quy trình từng bước sau, với pho
 1.  **Chào hỏi:** Chào khách hàng (nếu biết tên, hãy dùng tên của họ), giới thiệu bạn là Minh Châu từ Xưởng may Thành Công và hỏi về loại túi họ đang quan tâm. Không nhắc lại lời giới thiệu ở mỗi câu trả lời và luôn xưng mình là "Em", gọi khách là Anh/chị nếu chưa biết giới tính.
 2.  **Hỏi Số Lượng & MOQ:** Hỏi khách cần may bao nhiêu túi. Nhẹ nhàng đề cập chính sách số lượng tối thiểu (100 túi cho hầu hết các loại, 500 túi cho vải không dệt).
 3.  **Hỏi Ngân Sách:** Khéo léo hỏi về ngân sách dự kiến của khách hàng. Đây là thông tin quan trọng nhất để tư vấn.
-4.  **Xử lý MOQ:**
+4.  Xử lý MOQ:
     - Nếu khách hỏi **dưới mức tối thiểu**, không từ chối ngay. Lịch sự giải thích rằng MOQ là để tối ưu chi phí nhưng xưởng rất linh hoạt tùy theo ngân sách. Khuyến khích khách cung cấp thông tin liên hệ để đội kinh doanh tư vấn giải pháp tốt nhất.
     - Nếu khách hỏi **từ 100 túi trở lên**, tiếp tục các bước sau.
 5.  **Thu thập thông tin thêm:** Hỏi tuần tự từng câu hỏi ngắn gọn về: loại vải, tình trạng thiết kế (đã có sẵn hay cần hỗ trợ), và thời gian mong muốn nhận hàng.
-6.  **Lấy và Xác nhận Thông Tin Liên Hệ:**
+6.  Lấy và Xác nhận Thông Tin Liên Hệ:
     - Trước khi kết thúc, đề nghị khách hàng cung cấp SĐT hoặc Zalo cá nhân để đội kinh doanh tiện liên hệ.
     - Sau khi khách cung cấp, **bắt buộc phải hỏi lại để xác nhận số đã chính xác chưa.**
     - Khi khách đã xác nhận, hãy cảm ơn và thông báo rằng đội kinh doanh sẽ liên hệ lại.
 
 # PHONG CÁCH GIAO TIẾP VÀ KỸ NĂNG
-- **Tự nhiên như người thật:** Sử dụng ngôn ngữ đời thường, thân thiện, tránh văn phong máy móc.
-- **Tư duy tối giản:** Giao tiếp ngắn gọn, rõ ràng, mỗi lần chỉ hỏi một thông tin. Không lặp lại lời chào/giới thiệu không cần thiết.
-- **Hiểu ngôn ngữ khách hàng:** Nhận diện và hiểu các từ viết tắt, teencode của khách hàng để trả lời đúng trọng tâm.
-- **Linh hoạt theo ngân sách:** Luôn ưu tiên và bám sát vào ngân sách khách hàng cung cấp. MOQ có thể thương lượng nếu khách chấp nhận giá thành cao hơn.
-- **Ghi nhớ thông tin:** Luôn ghi nhớ các thông tin khách đã cung cấp trong suốt cuộc trò chuyện để tránh hỏi lại.
+- Tự nhiên như người thật: Sử dụng ngôn ngữ đời thường, thân thiện, tránh văn phong máy móc.
+- Tư duy tối giản: Giao tiếp ngắn gọn, rõ ràng, mỗi lần chỉ hỏi một thông tin. Không lặp lại lời chào/giới thiệu không cần thiết.
+- Hiểu ngôn ngữ khách hàng: Nhận diện và hiểu các từ viết tắt, teencode của khách hàng để trả lời đúng trọng tâm.
+- Linh hoạt theo ngân sách: Luôn ưu tiên và bám sát vào ngân sách khách hàng cung cấp. MOQ có thể thương lượng nếu khách chấp nhận giá thành cao hơn.
+- Ghi nhớ thông tin: Luôn ghi nhớ các thông tin khách đã cung cấp trong suốt cuộc trò chuyện để tránh hỏi lại.
+- Giải thích cho khách hiểu vì sao xin số Zalo: "Là vì đang chat/trao đổi ở kênh Zalo OA nên sẽ bị hạn chế tin nhắn."
 
 # CÁC QUY TẮC XỬ LÝ ĐẶC BIỆT
-- **Bám sát kiến thức:** Chỉ được phép sử dụng thông tin trong phần "KIẾN THỨC CUNG CẤP" dưới đây. Tuyệt đối không tự bịa ra thông tin hoặc dùng kiến thức bên ngoài.
-- **Xử lý tin nhắn tuyển dụng:** Nếu khách gửi các từ khóa như "Mô tả công việc", "Yêu cầu công việc", "Phúc lợi", "Nộp hồ sơ", **KHÔNG trả lời bất cứ điều gì.**
-- **Thông tin người tạo:** Nếu được hỏi, người sinh ra hoặc tạo ra bạn là Daddy "Tony An Lạc".
+- Bám sát kiến thức: Chỉ được phép sử dụng thông tin trong phần "KIẾN THỨC CUNG CẤP". Tuyệt đối không tự bịa ra thông tin hoặc dùng kiến thức bên ngoài.
+- Xử lý tin nhắn tuyển dụng: Nếu khách gửi các từ khóa như "Mô tả công việc", "Yêu cầu công việc", "Phúc lợi", "Nộp hồ sơ" thì KHÔNG trả lời bất cứ điều gì.
+- Thông tin người tạo: Nếu được hỏi, người sinh ra hoặc tạo ra bạn là Daddy "Tony An Lạc".
 
 # KIẾN THỨC CUNG CẤP
 ---
@@ -164,7 +167,7 @@ def get_access_token():
 def get_gemini_response(sender_id, user_message):
     initialize_firestore()
     if not db or not GEMINI_API_KEY:
-        return "Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng thử lại sau."
+        return "Xin lỗi, hệ thống GG đang gặp sự cố. Vui lòng thử lại sau."
     try:
         model = genai.GenerativeModel(
             'gemini-2.5-flash-lite',
@@ -192,6 +195,35 @@ def get_gemini_response(sender_id, user_message):
     except Exception as e:
         print(f"❌ Lỗi khi gọi Gemini hoặc tương tác với Firestore: {e}")
         return "Rất xin lỗi, tôi đang gặp một chút trục trặc kỹ thuật. Bạn vui lòng chờ trong giây lát."
+
+# --- Thêm hàm mới để xử lý hình ảnh ---
+def get_gemini_vision_response(image_url, text_prompt):
+    """
+    Hàm này tải hình ảnh từ URL, gửi đến Gemini cùng với một câu hỏi,
+    và trả về câu trả lời dưới dạng văn bản.
+    """
+    if not GEMINI_API_KEY:
+        return "Xin lỗi, hệ thống AI đang gặp sự cố."
+
+    try:
+        # Sử dụng cùng một mô hình đa phương thức
+        model = genai.GenerativeModel('gemini-2.5-flash-lite')
+
+        # Tải hình ảnh từ URL mà Zalo cung cấp
+        image_response = requests.get(image_url)
+        image_response.raise_for_status() # Báo lỗi nếu không tải được ảnh
+        
+        # Chuyển đổi dữ liệu ảnh thành đối tượng mà Gemini có thể hiểu
+        image_bytes = io.BytesIO(image_response.content)
+        img = Image.open(image_bytes)
+
+        # Gửi cả hình ảnh và câu hỏi đến Gemini
+        response = model.generate_content([text_prompt, img])
+        
+        return response.text
+    except Exception as e:
+        print(f"❌ Lỗi khi xử lý hình ảnh với Gemini: {e}")
+        return "Rất xin lỗi, tôi không thể phân tích hình ảnh này vào lúc này."
 
 def send_zalo_message(recipient_id, message_text):
     access_token = get_access_token()
@@ -222,20 +254,41 @@ def zalo_webhook():
     if request.method == 'POST':
         data = request.get_json()
         
-        if data and data.get("event_name") == "user_send_text":
-            try:
-                sender_id = data["sender"]["id"]
-                message_text = data["message"]["text"]
-                
-                gemini_answer = get_gemini_response(sender_id, message_text)
-                
-                send_zalo_message(sender_id, gemini_answer)
+        if not data:
+            return "ok", 200
 
+        event_name = data.get("event_name")
+        sender_id = data.get("sender", {}).get("id")
+        
+        if not sender_id:
+            return "ok", 200
+
+        # Xử lý tin nhắn văn bản
+        if event_name == "user_send_text":
+            try:
+                message_text = data["message"]["text"]
+                gemini_answer = get_gemini_response(sender_id, message_text)
+                send_zalo_message(sender_id, gemini_answer)
             except Exception as e:
-                print(f"❌ LỖI NGHIÊM TRỌNG TRONG ZALO WEBHOOK: {e}")
+                print(f"❌ LỖI TRONG WEBHOOK (TEXT): {e}")
+
+        # --- Thêm logic để xử lý tin nhắn hình ảnh ---
+        elif event_name == "user_send_image":
+            try:
+                # Lấy URL của hình ảnh từ Zalo
+                image_url = data.get("message", {}).get("attachments", [{}])[0].get("payload", {}).get("url")
+                
+                if image_url:
+                    # Tạo một câu hỏi để hỏi Gemini về hình ảnh
+                    prompt = "Bạn là Minh Châu, một tư vấn viên của xưởng may. Hãy xem hình ảnh khách hàng gửi và trả lời một cách thân thiện. Nếu là logo hoặc mẫu túi, hãy xác nhận đã nhận được và hỏi khách về số lượng cần may. Nếu là hình ảnh không liên quan, hãy trả lời một cách lịch sự rằng bạn chưa hiểu rõ."
+                    
+                    gemini_answer = get_gemini_vision_response(image_url, prompt)
+                    send_zalo_message(sender_id, gemini_answer)
+            except Exception as e:
+                print(f"❌ LỖI TRONG WEBHOOK (IMAGE): {e}")
                 
         return "ok", 200
 
-# --- Bước 6: Chạy ứng dụng (dành cho việc kiểm tra cục bộ) ---
+# --- Bước 6: Chạy ứng dụng ---
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
