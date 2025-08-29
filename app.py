@@ -123,7 +123,6 @@ def get_access_token():
 
     print("Access token đã hết hạn hoặc không hợp lệ, đang lấy token mới...")
     
-    # --- SỬA LỖI #1: Gửi Secret Key trong headers thay vì auth ---
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded',
         'secret_key': ZALO_SECRET_KEY
@@ -134,7 +133,6 @@ def get_access_token():
         'grant_type': 'refresh_token'
     }
     try:
-        # --- SỬA LỖI #2: Bỏ tham số auth ---
         response = requests.post('https://oauth.zalo.me/v4/oa/access_token', headers=headers, data=data)
         response.raise_for_status()
         new_token_data = response.json()
@@ -143,7 +141,10 @@ def get_access_token():
             print(f"❌ Zalo trả về lỗi khi làm mới token: {new_token_data}")
             return None
 
-        new_token_data['expires_at'] = time.time() + new_token_data['expires_in']
+        # --- SỬA LỖI #1: Chuyển đổi 'expires_in' thành số nguyên (int) ---
+        expires_in_seconds = int(new_token_data['expires_in'])
+        new_token_data['expires_at'] = time.time() + expires_in_seconds
+        
         with open(TOKEN_FILE_PATH, 'w') as f:
             json.dump(new_token_data, f)
         
@@ -154,9 +155,10 @@ def get_access_token():
         if 'response' in locals():
             print(f"Phản hồi từ Zalo OAuth: {response.text}")
         return None
-    except KeyError as e:
-        print(f"❌ Lỗi KeyError khi xử lý phản hồi từ Zalo: Thiếu khóa {e}")
-        print(f"Phản hồi nhận được từ Zalo: {new_token_data}")
+    except (KeyError, TypeError) as e:
+        print(f"❌ Lỗi khi xử lý phản hồi từ Zalo: {e}")
+        if 'new_token_data' in locals():
+            print(f"Phản hồi nhận được từ Zalo: {new_token_data}")
         return None
 
 def get_gemini_response(sender_id, user_message):
@@ -165,7 +167,7 @@ def get_gemini_response(sender_id, user_message):
         return "Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng thử lại sau."
     try:
         model = genai.GenerativeModel(
-            'gemini-1.5-pro-latest',
+            'gemini-2.5-flash',
             system_instruction=SYSTEM_INSTRUCTION
         )
         
