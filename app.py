@@ -15,12 +15,9 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 FIREBASE_CREDENTIALS_JSON = os.getenv('FIREBASE_CREDENTIALS_JSON')
-# --- Lấy các biến cần thiết cho việc làm mới token ---
 ZALO_APP_ID = os.getenv('ZALO_APP_ID')
 ZALO_SECRET_KEY = os.getenv('ZALO_SECRET_KEY')
-ZALO_REFRESH_TOKEN = os.getenv('ZALO_REFRESH_TOKEN') # Refresh token dài hạn (3 tháng)
-
-# Đường dẫn đến file lưu trữ access token tạm thời
+ZALO_REFRESH_TOKEN = os.getenv('ZALO_REFRESH_TOKEN')
 TOKEN_FILE_PATH = os.path.join(os.path.dirname(__file__), 'zalo_token.json')
 
 if GEMINI_API_KEY:
@@ -115,7 +112,6 @@ def initialize_firestore():
 
 # --- Bước 4: Các hàm chức năng chính của Bot ---
 
-# --- Hàm quản lý và làm mới Access Token ---
 def get_access_token():
     try:
         with open(TOKEN_FILE_PATH, 'r') as f:
@@ -126,19 +122,23 @@ def get_access_token():
         pass
 
     print("Access token đã hết hạn hoặc không hợp lệ, đang lấy token mới...")
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    
+    # --- SỬA LỖI #1: Gửi Secret Key trong headers thay vì auth ---
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'secret_key': ZALO_SECRET_KEY
+    }
     data = {
         'app_id': ZALO_APP_ID,
         'refresh_token': ZALO_REFRESH_TOKEN,
         'grant_type': 'refresh_token'
     }
     try:
-        response = requests.post('https://oauth.zalo.me/v4/oa/access_token', headers=headers, data=data,
-                                 auth=(ZALO_APP_ID, ZALO_SECRET_KEY))
+        # --- SỬA LỖI #2: Bỏ tham số auth ---
+        response = requests.post('https://oauth.zalo.me/v4/oa/access_token', headers=headers, data=data)
         response.raise_for_status()
         new_token_data = response.json()
 
-        # --- THAY ĐỔI #1: Kiểm tra xem Zalo có trả về lỗi không ---
         if 'error_name' in new_token_data:
             print(f"❌ Zalo trả về lỗi khi làm mới token: {new_token_data}")
             return None
@@ -155,7 +155,6 @@ def get_access_token():
             print(f"Phản hồi từ Zalo OAuth: {response.text}")
         return None
     except KeyError as e:
-        # --- THAY ĐỔI #2: Ghi log chi tiết hơn khi gặp lỗi KeyError ---
         print(f"❌ Lỗi KeyError khi xử lý phản hồi từ Zalo: Thiếu khóa {e}")
         print(f"Phản hồi nhận được từ Zalo: {new_token_data}")
         return None
@@ -166,28 +165,23 @@ def get_gemini_response(sender_id, user_message):
         return "Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng thử lại sau."
     try:
         model = genai.GenerativeModel(
-            'gemini-2.5-flash',
+            'gemini-1.5-pro-latest',
             system_instruction=SYSTEM_INSTRUCTION
         )
         
-        # --- SỬA LỖI #1: Tải lịch sử từ Firestore trước ---
         history_from_db = []
         doc_ref = db.collection('zalo_conversations').document(sender_id)
         doc = doc_ref.get()
         if doc.exists:
             history_from_db = doc.to_dict().get('history', [])
 
-        # --- SỬA LỖI #2: Bắt đầu cuộc trò chuyện với lịch sử đã có ---
         chat = model.start_chat(history=history_from_db)
         
         response = chat.send_message(user_message)
         bot_response = response.text
 
-        # --- SỬA LỖI #3: Chuyển đổi toàn bộ lịch sử từ đối tượng Gemini sang dict để lưu trữ ---
-        # `chat.history` bây giờ chứa toàn bộ cuộc trò chuyện dưới dạng đối tượng `Content`
         new_history_to_save = []
         for content in chat.history:
-            # Luôn chuyển đổi `part` thành `text` để đảm bảo tính nhất quán
             parts_text = [part.text for part in content.parts]
             new_history_to_save.append({'role': content.role, 'parts': parts_text})
         
@@ -197,7 +191,6 @@ def get_gemini_response(sender_id, user_message):
         print(f"❌ Lỗi khi gọi Gemini hoặc tương tác với Firestore: {e}")
         return "Rất xin lỗi, tôi đang gặp một chút trục trặc kỹ thuật. Bạn vui lòng chờ trong giây lát."
 
-# --- THAY ĐỔI #3: Sửa hàm send_zalo_message để tự động lấy token ---
 def send_zalo_message(recipient_id, message_text):
     access_token = get_access_token()
     if not access_token:
@@ -215,7 +208,6 @@ def send_zalo_message(recipient_id, message_text):
         if 'response' in locals(): print(f"Phản hồi từ Zalo API: {response.text}")
 
 # --- Bước 5: Khởi tạo ứng dụng web và định nghĩa Webhook ---
-# --- Chỉ còn 1 OA nên không cần map token nữa ---
 app = Flask(__name__)
 
 @app.route('/zalo-webhook', methods=['GET', 'POST'])
