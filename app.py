@@ -167,7 +167,7 @@ def get_gemini_response(sender_id, user_message):
         return "Xin lỗi, hệ thống AI đang gặp sự cố. Vui lòng thử lại sau."
     try:
         model = genai.GenerativeModel(
-            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
             system_instruction=SYSTEM_INSTRUCTION
         )
         
